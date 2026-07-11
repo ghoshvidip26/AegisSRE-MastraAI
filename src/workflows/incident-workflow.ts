@@ -1,0 +1,185 @@
+import { createWorkflow, createStep } from "@mastra/core/workflows";
+import { z } from "zod";
+
+const diagnoseStep = createStep({
+    id: "diagnose",
+    description: "Analyze the incident to determine root cause",
+    inputSchema: z.object({
+        incidentDescription: z.string(),
+        incidentId: z.string().optional(),
+        service: z.string().optional(),
+    }),
+    outputSchema: z.object({
+        rootCause: z.string(),
+        severity: z.string(),
+        confidence: z.number(),
+        affectedService: z.string(),
+        recommendation: z.string(),
+    }),
+    execute: async ({ inputData, mastra }) => {
+        const agent = mastra.getAgent("diagnosisAgent");
+        const result = await agent.generate(
+            `Analyze this incident and return JSON with rootCause, severity, confidence, affectedService, and recommendation:\n\n${inputData.incidentDescription}`
+        );
+        try {
+            return JSON.parse(result.text);
+        } catch {
+            return {
+                rootCause: result.text,
+                severity: "unknown",
+                confidence: 0.5,
+                affectedService: inputData.service || "unknown",
+                recommendation: "Manual investigation needed",
+            };
+        }
+    },
+});
+
+const planStep = createStep({
+    id: "plan-remediation",
+    description: "Generate a remediation plan based on diagnosis",
+    inputSchema: z.object({
+        rootCause: z.string(),
+        severity: z.string(),
+        confidence: z.number(),
+        affectedService: z.string(),
+        recommendation: z.string(),
+    }),
+    outputSchema: z.object({
+        plan: z.string(),
+        steps: z.array(z.string()),
+        approved: z.boolean(),
+        risk: z.string(),
+    }),
+    execute: async ({ inputData, mastra }) => {
+        const agent = mastra.getAgent("planningAgent");
+        const result = await agent.generate(
+            `Generate a remediation plan for this diagnosis. Validate it against safety policies before returning.
+
+Root Cause: ${inputData.rootCause}
+Severity: ${inputData.severity}
+Affected Service: ${inputData.affectedService}
+Recommendation: ${inputData.recommendation}
+
+Return JSON with: plan (summary), steps (array of commands/actions), approved (boolean), risk (low/medium/high)`
+        );
+        try {
+            return JSON.parse(result.text);
+        } catch {
+            return {
+                plan: result.text,
+                steps: [],
+                approved: false,
+                risk: "unknown",
+            };
+        }
+    },
+});
+
+const executeStep = createStep({
+    id: "execute-remediation",
+    description: "Execute the approved remediation plan",
+    inputSchema: z.object({
+        plan: z.string(),
+        steps: z.array(z.string()),
+        approved: z.boolean(),
+        risk: z.string(),
+    }),
+    outputSchema: z.object({
+        overallStatus: z.string(),
+        summary: z.string(),
+        executedSteps: z.array(z.string()),
+    }),
+    execute: async ({ inputData, mastra }) => {
+        if (!inputData.approved) {
+            return {
+                overallStatus: "blocked",
+                summary: "Remediation plan was not approved by policy validation.",
+                executedSteps: [],
+            };
+        }
+
+        const agent = mastra.getAgent("executionAgent");
+        const result = await agent.generate(
+            `Execute this remediation plan and report results:
+
+Plan: ${inputData.plan}
+Steps: ${inputData.steps.join("\n")}
+
+Return JSON with: overallStatus, summary, executedSteps`
+        );
+        try {
+            return JSON.parse(result.text);
+        } catch {
+            return {
+                overallStatus: "completed",
+                summary: result.text,
+                executedSteps: inputData.steps,
+            };
+        }
+    },
+});
+
+const verifyStep = createStep({
+    id: "verify-remediation",
+    description: "Verify the remediation was successful",
+    inputSchema: z.object({
+        overallStatus: z.string(),
+        summary: z.string(),
+        executedSteps: z.array(z.string()),
+    }),
+    outputSchema: z.object({
+        resolved: z.boolean(),
+        recommendation: z.string(),
+        evidence: z.array(z.string()),
+    }),
+    execute: async ({ inputData, mastra }) => {
+        if (inputData.overallStatus === "blocked") {
+            return {
+                resolved: false,
+                recommendation: "escalate",
+                evidence: ["Remediation was blocked by policy validation"],
+            };
+        }
+
+        const agent = mastra.getAgent("verificationAgent");
+        const result = await agent.generate(
+            `Verify if this remediation was successful:
+
+Status: ${inputData.overallStatus}
+Summary: ${inputData.summary}
+Steps Executed: ${inputData.executedSteps.join("\n")}
+
+Check metrics and logs. Return JSON with: resolved (boolean), recommendation (close_incident | escalate | rollback), evidence (array of observations)`
+        );
+        try {
+            return JSON.parse(result.text);
+        } catch {
+            return {
+                resolved: false,
+                recommendation: "escalate",
+                evidence: [result.text],
+            };
+        }
+    },
+});
+
+export const incidentWorkflow = createWorkflow({
+    id: "incident-workflow",
+    description: "End-to-end incident response: diagnose → plan → execute → verify",
+    inputSchema: z.object({
+        incidentDescription: z.string(),
+        incidentId: z.string().optional(),
+        service: z.string().optional(),
+    }),
+    outputSchema: z.object({
+        resolved: z.boolean(),
+        recommendation: z.string(),
+        evidence: z.array(z.string()),
+    }),
+})
+    .then(diagnoseStep)
+    .then(planStep)
+    .then(executeStep)
+    .then(verifyStep)
+    .commit();

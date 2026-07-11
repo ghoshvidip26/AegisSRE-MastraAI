@@ -4,15 +4,15 @@ import { createUIMessageStreamResponse } from 'ai'
 import { mastra } from '@/src/mastra'
 import { NextResponse } from 'next/server'
 
-const THREAD_ID = 'example-user-id'
-const RESOURCE_ID = 'weather-chat'
+const THREAD_ID = 'aegis-sre-session'
+const RESOURCE_ID = 'incident-chat'
 type UIMessageStreamResponseOptions = Parameters<typeof createUIMessageStreamResponse>[0]
 
 export async function POST(req: Request) {
     const params = await req.json()
     const stream = await handleChatStream({
         mastra,
-        agentId: 'weather-agent',
+        agentId: 'coordinator-agent',
         params: {
             ...params,
             memory: {
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-    const memory = await mastra.getAgentById('weather-agent').getMemory()
+    const memory = await mastra.getAgentById('coordinator-agent').getMemory()
     let response = null
 
     try {

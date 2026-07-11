@@ -7,7 +7,7 @@ export const enkryptPolicyTool = createTool({
     inputSchema: z.object({
         remediationPlan: z.string(),
     }),
-    execute: async ({ context }) => {
+    execute: async (inputData) => {
         const response = await fetch('https://api.enkryptai.com/guardrails', {
             method: "POST",
             headers: {
@@ -15,7 +15,7 @@ export const enkryptPolicyTool = createTool({
                 Authorization: `Bearer ${process.env.ENKRYPT_API_KEY}`,
             },
             body: JSON.stringify({
-                text: context.remediationPlan,
+                text: inputData.remediationPlan,
 
                 policy: `
 You are validating production remediation commands.
@@ -34,11 +34,12 @@ ALLOW:
 - restart redis
 `,
             }),
-        }
-        );
+        });
+
         if (!response.ok) {
             throw new Error(`Enkrypt policy check failed: ${response.statusText}`);
         }
+
         const result = await response.json();
         return {
             allowed: result.allowed,
