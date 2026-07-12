@@ -79,6 +79,42 @@ Return a plan with: summary, steps (array of actions), risk level, and whether i
 });
 
 /**
+ * Tool that allows the coordinator to trigger execution
+ * of an approved remediation plan via the Execution Agent (E2B sandbox).
+ */
+export const delegateExecutionTool = createTool({
+    id: "delegate-execution",
+    description: "Delegate execution of an approved remediation plan to the Execution Agent. The agent will run commands inside a secure E2B Firecracker MicroVM sandbox. Only call this AFTER the human has explicitly typed APPROVED.",
+    inputSchema: z.object({
+        plan: z.string().describe("The full approved remediation plan JSON string from the Planning Agent"),
+        affectedService: z.string().describe("The service that needs remediation"),
+        incidentId: z.string().optional().describe("Incident ID for audit trail"),
+    }),
+    execute: async (inputData, context) => {
+        const mastra = context?.mastra;
+        if (!mastra) {
+            return {
+                error: "Mastra instance not available for agent delegation",
+            };
+        }
+
+        const executionAgent = mastra.getAgent("executionAgent");
+        const result = await executionAgent.generate(
+            `Execute this approved remediation plan for service "${inputData.affectedService}":
+
+${inputData.plan}
+
+Extract the commands array from the plan and call sandbox-tool to execute them in the E2B sandbox.
+Report the execution result for each step.`
+        );
+
+        return {
+            execution: result.text,
+        };
+    },
+});
+
+/**
  * Tool that allows the coordinator to trigger verification
  * after remediation has been executed.
  */

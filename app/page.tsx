@@ -1,10 +1,11 @@
 'use client'
 
 import '@/app/globals.css'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { DefaultChatTransport, ToolUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import { Sun, Moon, Network, RotateCcw } from 'lucide-react'
+import { ApprovalCard, parsePlanForApproval } from '@/components/ai-elements/approval-card'
 
 import {
   PromptInput,
@@ -89,6 +90,35 @@ function CommandCenter() {
     }
   }
 
+  // Scan the last assistant message for a requiresApproval plan
+  const pendingPlan = useMemo(() => {
+    const assistantMsgs = messages.filter(m => m.role === 'assistant')
+    if (!assistantMsgs.length) return null
+    const last = assistantMsgs[assistantMsgs.length - 1]
+    const allText = last.parts
+      ?.filter((p: { type: string }) => p.type === 'text')
+      .map((p: { type: string; text?: string }) => (p as { type: string; text: string }).text)
+      .join('') ?? ''
+    return parsePlanForApproval(allText)
+  }, [messages])
+
+  const [approvalDecided, setApprovalDecided] = useState(false)
+
+  // Reset decision state when messages reset
+  useEffect(() => {
+    setApprovalDecided(false)
+  }, [messages.length === 0])
+
+  const handleApprove = () => {
+    setApprovalDecided(true)
+    sendMessage({ text: 'APPROVED: proceed with execution in the sandbox.' })
+  }
+
+  const handleReject = () => {
+    setApprovalDecided(true)
+    sendMessage({ text: 'REJECTED: do not execute. Mark the incident as cancelled.' })
+  }
+
   return (
     <IncidentContextProvider messages={messages}>
       <div className="flex h-screen w-full overflow-hidden relative transition-colors duration-300 bg-background text-foreground">
@@ -162,6 +192,16 @@ function CommandCenter() {
                   <ConversationScrollButton />
                 </ConversationContent>
               </Conversation>
+
+              {/* HITL Approval Card — appears when planning agent emits a plan requiring approval */}
+              {pendingPlan && !approvalDecided && (
+                <ApprovalCard
+                  plan={pendingPlan}
+                  onApprove={handleApprove}
+                  onReject={handleReject}
+                  isPending={status !== 'ready'}
+                />
+              )}
 
               {/* Input */}
               <PromptInput onSubmit={handleSubmit} className="mt-4">
