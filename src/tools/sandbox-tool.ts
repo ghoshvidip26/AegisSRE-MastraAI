@@ -166,28 +166,27 @@ export const sandboxTool = createTool({
     }[] = [];
 
     try {
-      const { Sandbox } = await import("@e2b/code-interpreter");
+      const { Sandbox } = await import("e2b");
       const sandbox = await Sandbox.create({ apiKey });
-      sandboxId = sandbox.sandboxId;
+      sandboxId = sandbox.sandboxId ?? "active-sandbox";
 
       // Pre-install kubectl if any commands need it
       const needsKubectl = commands.some(
         (c) => c.includes("kubectl") || c.startsWith("k ")
       );
       if (needsKubectl) {
-        await sandbox.runCode(
-          `curl -sLO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl /usr/local/bin/kubectl`,
-          { language: "bash" }
+        await sandbox.commands.run(
+          `curl -sLO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl" && chmod +x kubectl && mv kubectl /usr/local/bin/kubectl`
         );
       }
 
       for (const cmd of commands) {
         const start = Date.now();
         try {
-          const result = await sandbox.runCode(cmd, { language: "bash" });
+          const result = await sandbox.commands.run(cmd);
           const duration_ms = Date.now() - start;
-          const stdout = result.logs?.stdout?.join("\n") ?? "";
-          const stderr = result.logs?.stderr?.join("\n") ?? "";
+          const stdout = result.stdout ?? "";
+          const stderr = result.stderr ?? "";
 
           // Fall back to demo output whenever the real sandbox cannot reach
           // the target infrastructure (no cluster, no DB, tool not found, etc.)
