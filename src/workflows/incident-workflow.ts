@@ -50,7 +50,8 @@ const diagnoseStep = createStep({
     execute: async ({ inputData, mastra }) => {
         const agent = mastra.getAgent("diagnosisAgent");
         const result = await agent.generate(
-            `Analyze this incident and return JSON with rootCause, severity, confidence, affectedService, and recommendation:\n\n${inputData.incidentDescription}`
+            `Analyze this incident and return JSON with rootCause, severity, confidence, affectedService, and recommendation:\n\n${inputData.incidentDescription}`,
+            { maxRetries: 0 }
         );
         try {
             const parsed = JSON.parse(result.text);

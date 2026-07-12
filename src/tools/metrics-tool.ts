@@ -7,7 +7,7 @@ export const metricsTool = createTool({
     inputSchema: z.object({
         service: z.string(),
     }),
-    execute: async ({ }) => {
+    execute: async (inputData) => {
         return {
             cpu: 87,
             memory: 78,

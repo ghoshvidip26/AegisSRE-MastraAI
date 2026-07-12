@@ -1,4 +1,5 @@
 import { Agent } from "@mastra/core/agent";
+import { Memory } from "@mastra/memory";
 import { logTool } from "../tools/log-tool";
 import { metricsTool } from "../tools/metrics-tool";
 import { delegateDiagnosisTool, delegatePlanningTool, delegateVerificationTool } from "../tools/delegate-tool";
@@ -31,5 +32,6 @@ Keep responses concise and actionable. You're talking to on-call engineers who n
         delegateDiagnosisTool,
         delegatePlanningTool,
         delegateVerificationTool,
-    }
+    },
+    memory: new Memory(),
 })
