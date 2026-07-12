@@ -14,15 +14,15 @@ export interface RetryConfig {
 
 export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   maxAttempts: 3,
-  initialDelay: 1000,
-  backoffMultiplier: 2,
-  maxDelay: 10000,
+  initialDelay: 5000,
+  backoffMultiplier: 3,
+  maxDelay: 30000,
 };
 
 /**
  * Determines if an error is a rate limit error that should be retried.
  */
-function isRateLimitError(error: unknown): boolean {
+export function isRateLimitError(error: unknown): boolean {
   if (error instanceof Error) {
     const msg = error.message.toLowerCase();
     return (

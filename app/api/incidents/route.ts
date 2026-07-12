@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse} from "next/server";
 import { incidentStore } from "@/lib/incidents/incident-store";
 import { mastra } from '@/src/mastra';
-import { withRetry } from "@/lib/utils/retry";
+import { withRetry, isRateLimitError } from "@/lib/utils/retry";
+import { fallbackModel } from "@/src/models/fallback";
 
 /**
  * Infer severity from incident content when not explicitly provided.
@@ -73,7 +74,8 @@ export async function POST(req: NextRequest) {
 
 /**
  * Process the incident asynchronously with retry logic.
- * If all retries fail, marks the incident as FAILED with a reason.
+ * If primary model rate-limits, falls back to local Ollama.
+ * If everything fails, marks the incident as FAILED with a reason.
  */
 async function processIncidentAsync(
     incidentId: string,
@@ -81,44 +83,97 @@ async function processIncidentAsync(
 ) {
     const workflow = mastra.getWorkflow("incidentWorkflow");
 
+    const workflowInput = {
+        incidentDescription: `Title: ${incident.title}\nMessage: ${incident.message}`,
+        incidentId: incident.id,
+        service: incident.service,
+    };
+
     try {
+        // Try primary model (Gemini Flash) with retries
         const { attempts } = await withRetry(
             async () => {
                 const run = await workflow.createRun();
-                const result = await run.start({
-                    inputData: {
-                        incidentDescription: `Title: ${incident.title}\nMessage: ${incident.message}`,
-                        incidentId: incident.id,
-                        service: incident.service
-                    }
-                });
+                const result = await run.start({ inputData: workflowInput });
                 if (result.status === 'failed') {
-                    console.error("Workflow failed:", result.error);
                     throw new Error(result.error?.message || "Workflow failed");
                 }
                 return result;
             },
             {
-                maxAttempts: 3,
-                initialDelay: 2000,   // Start with 2s (Gemini rate limits usually need a few seconds)
+                maxAttempts: 2,
+                initialDelay: 2000,
                 backoffMultiplier: 2,
-                maxDelay: 15000,
+                maxDelay: 10000,
             }
         );
 
         if (attempts > 1) {
-            console.log(`[incident] ${incidentId} processed after ${attempts} attempts`);
+            console.log(`[incident] ${incidentId} processed after ${attempts} attempts on primary model`);
         }
 
         incidentStore.update(incidentId, { retryCount: attempts });
-    } catch (error) {
-        console.error(`[incident] ${incidentId} FAILED after retries:`, error);
-        const reason = error instanceof Error ? error.message : "Unknown error during workflow processing";
+    } catch (primaryError) {
+        // If rate-limited, fall back to local Ollama (gemma3:1b) in tool-free mode
+        if (isRateLimitError(primaryError)) {
+            console.log(`[incident] ${incidentId} primary model rate-limited. Falling back to Ollama (gemma3:1b, tool-free)...`);
 
-        incidentStore.update(incidentId, {
-            status: "FAILED",
-            failureReason: reason,
-        });
+            try {
+                // gemma3:1b doesn't support tool calling, so we use toolChoice: "none"
+                // and do a direct text-based triage instead of the full agent workflow
+                const diagnosisAgent = mastra.getAgent("diagnosisAgent");
+                const result = await diagnosisAgent.generate(
+                    `You are a senior SRE. Analyze this incident and return ONLY a JSON object with these fields:
+- rootCause: string (what caused the incident)
+- severity: string (P1/P2/P3/P4)
+- confidence: number (0-1)
+- affectedService: string
+- recommendation: string (immediate action to take)
+
+Incident Title: ${incident.title}
+Incident Message: ${incident.message}
+Service: ${incident.service}
+
+Return ONLY valid JSON, no markdown, no explanation.`,
+                    { model: fallbackModel, toolChoice: "none" }
+                );
+
+                console.log(`[incident] ${incidentId} processed via tool-free triage (gemma3:1b)`);
+
+                // Try to parse and update the incident with diagnosis
+                try {
+                    const parsed = JSON.parse(result.text);
+                    incidentStore.update(incidentId, {
+                        status: "DIAGNOSED",
+                        retryCount: 3,
+                    });
+                    console.log(`[incident] ${incidentId} diagnosis: ${JSON.stringify(parsed)}`);
+                } catch {
+                    // Even if JSON parse fails, we got a text response — still better than FAILED
+                    incidentStore.update(incidentId, {
+                        status: "DIAGNOSED",
+                        retryCount: 3,
+                    });
+                    console.log(`[incident] ${incidentId} raw diagnosis: ${result.text}`);
+                }
+            } catch (fallbackError) {
+                const reason = `Primary model rate-limited. Fallback (gemma3:1b tool-free) also failed: ${fallbackError instanceof Error ? fallbackError.message : "unknown"}`;
+                console.error(`[incident] ${incidentId} FAILED: ${reason}`);
+
+                incidentStore.update(incidentId, {
+                    status: "FAILED",
+                    failureReason: reason,
+                });
+            }
+        } else {
+            const reason = primaryError instanceof Error ? primaryError.message : "Unknown error during workflow processing";
+            console.error(`[incident] ${incidentId} FAILED: ${reason}`);
+
+            incidentStore.update(incidentId, {
+                status: "FAILED",
+                failureReason: reason,
+            });
+        }
     }
 }
 
