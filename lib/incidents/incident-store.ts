@@ -1,8 +1,7 @@
 import { Incident } from "./incident";
-
+console.log("IncidentStore initialized");
 class IncidentStore{
     private incidents: Incident[] = [];
-
     create(incident: Omit<Incident,"id" | "createdAt">){
         const newIncident: Incident = {
             ...incident,
@@ -14,6 +13,7 @@ class IncidentStore{
     }
 
     getAll(){
+        console.log("INCIDENTS: ",this.incidents);
         return this.incidents;
     }
 
@@ -31,4 +31,15 @@ class IncidentStore{
     return incident;
   }
 }
-export const incidentStore = new IncidentStore();
+declare global {
+  // eslint-disable-next-line no-var
+  var incidentStore: IncidentStore | undefined;
+}
+
+export const incidentStore =
+  globalThis.incidentStore ??
+  new IncidentStore();
+
+if (process.env.NODE_ENV !== "production") {
+  globalThis.incidentStore = incidentStore;
+}

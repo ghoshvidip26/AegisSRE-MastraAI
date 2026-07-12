@@ -1,8 +1,8 @@
 'use client'
-
 import { Shield, Activity, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useIncidentContext } from './incident-context'
+import { useState,useEffect} from 'react'
 
 type Incident = {
   id: string
@@ -12,33 +12,6 @@ type Incident = {
   service: string
   timestamp: string
 }
-
-const mockIncidents: Incident[] = [
-  {
-    id: 'INC-001',
-    title: 'Redis connection pool exhausted',
-    severity: 'P1',
-    status: 'active',
-    service: 'auth-service',
-    timestamp: '2 min ago',
-  },
-  {
-    id: 'INC-002',
-    title: 'Elevated error rate on /api/payments',
-    severity: 'P2',
-    status: 'investigating',
-    service: 'payment-service',
-    timestamp: '15 min ago',
-  },
-  {
-    id: 'INC-003',
-    title: 'Memory leak in worker pods',
-    severity: 'P3',
-    status: 'resolved',
-    service: 'worker-service',
-    timestamp: '1h ago',
-  },
-]
 
 const severityColors: Record<string, string> = {
   P1: 'bg-red-500/20 text-red-400 border-red-500/30',
@@ -56,6 +29,18 @@ const statusIcons: Record<string, React.ReactNode> = {
 
 export function Sidebar() {
   const { metrics, workflowState, activeIncident } = useIncidentContext()
+  const [incident,setIncident] = useState<Incident[]>();
+  
+    useEffect(()=>{
+      const fetchIncident = async () => {
+        const res = await fetch('/api/incidents')
+        const data = await res.json()
+        setIncident(data.incident);
+      }
+      fetchIncident();
+    },[setIncident]);
+  
+    console.log("Incident: ",incident);
 
   // Derive system health from real metrics when available
   const healthData = metrics
@@ -147,7 +132,7 @@ export function Sidebar() {
           Recent Incidents
         </h2>
         <div className="space-y-1">
-          {mockIncidents.map((incident) => (
+          {incident?.map((incident) => (
             <button
               key={incident.id}
               className="w-full rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent"
