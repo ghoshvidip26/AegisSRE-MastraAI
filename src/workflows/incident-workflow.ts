@@ -1,5 +1,27 @@
+import { incidentStore } from "@/lib/incidents/incident-store";
 import { createWorkflow, createStep } from "@mastra/core/workflows";
 import { z } from "zod";
+
+const coordinatorStep = createStep({
+    id: "coordinator",
+    description: "Initialize the incident workflow",
+    inputSchema: z.object({
+        incidentDescription: z.string(),
+        incidentId: z.string(),
+        service: z.string()
+    }),
+    outputSchema: z.object({
+        incidentDescription: z.string(),
+        incidentId: z.string(),
+        service: z.string()
+    }),
+    execute: async({inputData})=> {
+        incidentStore.update(inputData.incidentId,{
+            status: "TRIAGING"
+        });
+        return inputData;
+    },
+})
 
 const diagnoseStep = createStep({
     id: "diagnose",
@@ -22,7 +44,12 @@ const diagnoseStep = createStep({
             `Analyze this incident and return JSON with rootCause, severity, confidence, affectedService, and recommendation:\n\n${inputData.incidentDescription}`
         );
         try {
-            return JSON.parse(result.text);
+            const parsed = JSON.parse(result.text);
+            incidentStore.update(inputData.incidentId!, {
+                severity: parsed.severity,
+                status: "DIAGNOSING",
+            });
+            return parsed;
         } catch {
             return {
                 rootCause: result.text,
@@ -64,6 +91,9 @@ Recommendation: ${inputData.recommendation}
 Return JSON with: plan (summary), steps (array of commands/actions), approved (boolean), risk (low/medium/high)`
         );
         try {
+            incidentStore.update(inputData.incidentId!, {
+                status: "PLANNING",
+            });
             return JSON.parse(result.text);
         } catch {
             return {
@@ -98,6 +128,10 @@ const executeStep = createStep({
                 executedSteps: [],
             };
         }
+
+        incidentStore.update(inputData.incidentId!, {
+            status: "EXECUTING",
+        });
 
         const agent = mastra.getAgent("executionAgent");
         const result = await agent.generate(
@@ -153,7 +187,17 @@ Steps Executed: ${inputData.executedSteps.join("\n")}
 Check metrics and logs. Return JSON with: resolved (boolean), recommendation (close_incident | escalate | rollback), evidence (array of observations)`
         );
         try {
-            return JSON.parse(result.text);
+            const parsed = JSON.parse(result.text);
+            if(parsed.resolved){
+                incidentStore.update(inputData.incidentId!, {
+                    status: "RESOLVED",
+                });
+            }
+            else{
+                incidentStore.update(inputData.incidentId!, {
+                    status: "FAILED",
+                });
+            }
         } catch {
             return {
                 resolved: false,
@@ -178,6 +222,7 @@ export const incidentWorkflow = createWorkflow({
         evidence: z.array(z.string()),
     }),
 })
+    .then(coordinatorStep)
     .then(diagnoseStep)
     .then(planStep)
     .then(executeStep)

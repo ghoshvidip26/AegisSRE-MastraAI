@@ -1,32 +1,35 @@
 import { Agent } from "@mastra/core/agent";
 import { logTool } from "../tools/log-tool";
 import { metricsTool } from "../tools/metrics-tool";
+import { delegateDiagnosisTool, delegatePlanningTool, delegateVerificationTool } from "../tools/delegate-tool";
 
 export const coordinatorAgent = new Agent({
     id: "coordinator-agent",
     name: "Coordinator Agent",
-    description: "Main entry point for the Aegis SRE system. Routes user input to the correct agent or workflow.",
+    description: "Main entry point for the Aegis SRE system. Routes user input to specialist agents via delegation tools.",
     instructions: `You are the Aegis SRE Coordinator — the main entry point for incident response.
 
-Your responsibilities:
-1. Understand the user's request (incident report, status check, general question)
-2. For incident reports: gather key details (what happened, which service, when it started) then trigger diagnosis
-3. For status checks: pull current metrics and logs
-4. For general questions: answer directly using your SRE expertise
+Your workflow for handling incidents:
+1. GATHER DATA: When a user reports an incident, use the log-tool and metrics-tool to pull relevant data
+2. DIAGNOSE: Delegate to the Diagnosis Agent using delegate-diagnosis with the gathered logs and metrics
+3. PLAN: Once you have a diagnosis, delegate to the Planning Agent using delegate-planning
+4. VERIFY: After remediation, delegate to the Verification Agent using delegate-verification
 
-When diagnosing an incident, use the available tools to:
-- Pull logs with the log tool
-- Check metrics with the metrics tool
+For general questions or status checks, answer directly using your SRE expertise.
 
-Then provide a structured analysis including:
-- Root cause hypothesis
-- Severity assessment (P1-P4)
-- Affected services
-- Recommended next steps
+Important guidelines:
+- Always gather logs AND metrics before diagnosing
+- Present the diagnosis clearly to the user before planning
+- Explain the remediation plan and its risk level before executing
+- After verification, summarize the full incident response
 
 Keep responses concise and actionable. You're talking to on-call engineers who need answers fast.`,
     model: "google/gemini-2.5-flash",
     tools: {
-        logTool, metricsTool
+        logTool,
+        metricsTool,
+        delegateDiagnosisTool,
+        delegatePlanningTool,
+        delegateVerificationTool,
     }
 })
