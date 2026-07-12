@@ -8,12 +8,12 @@ const coordinatorStep = createStep({
     inputSchema: z.object({
         incidentDescription: z.string(),
         incidentId: z.string().optional(),
-        service: z.string().optional(),
+        service: z.string().optional()
     }),
     outputSchema: z.object({
         incidentDescription: z.string(),
         incidentId: z.string(),
-        service: z.string(),
+        service: z.string()
     }),
     execute: async ({ inputData }) => {
         const incidentId = inputData.incidentId ?? `INC-${Date.now()}`;
@@ -58,10 +58,7 @@ const diagnoseStep = createStep({
                 severity: parsed.severity,
                 status: "DIAGNOSING",
             });
-            return {
-                incidentId: inputData.incidentId,
-                ...parsed,
-            };
+            return { ...parsed, incidentId: inputData.incidentId };
         } catch {
             return {
                 incidentId: inputData.incidentId,
