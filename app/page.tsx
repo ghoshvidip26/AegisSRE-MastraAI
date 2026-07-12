@@ -4,7 +4,7 @@ import '@/app/globals.css'
 import { useEffect, useState } from 'react'
 import { DefaultChatTransport, ToolUIPart } from 'ai'
 import { useChat } from '@ai-sdk/react'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Network, RotateCcw } from 'lucide-react'
 
 import {
   PromptInput,
@@ -24,10 +24,12 @@ import { Tool, ToolHeader, ToolContent, ToolInput, ToolOutput } from '@/componen
 import { Sidebar } from '@/components/dashboard/sidebar'
 import { ContextPanel } from '@/components/dashboard/context-panel'
 import { IncidentContextProvider, useIncidentContext } from '@/components/dashboard/incident-context'
+import { WorkflowCanvas } from '@/components/dashboard/workflow-canvas'
 
 function CommandCenter() {
   const [input, setInput] = useState<string>('')
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
+  const [showWorkflow, setShowWorkflow] = useState<boolean>(true)
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null
@@ -77,6 +79,16 @@ function CommandCenter() {
     setInput('')
   }
 
+  const handleReset = async () => {
+    try {
+      await fetch('/api/chat', { method: 'DELETE' })
+      setMessages([])
+      window.location.reload()
+    } catch (e) {
+      console.error('Failed to reset chat:', e)
+    }
+  }
+
   return (
     <IncidentContextProvider messages={messages}>
       <div className="flex h-screen w-full overflow-hidden relative transition-colors duration-300 bg-background text-foreground">
@@ -92,7 +104,20 @@ function CommandCenter() {
           {/* Center — Chat Interface */}
           <main className="flex flex-1 flex-col min-w-0 glass-panel rounded-2xl overflow-hidden shadow-2xl bg-card/10 border-border/40">
             {/* Top bar */}
-            <IncidentHeader theme={theme} toggleTheme={toggleTheme} />
+            <IncidentHeader
+              theme={theme}
+              toggleTheme={toggleTheme}
+              showWorkflow={showWorkflow}
+              toggleWorkflow={() => setShowWorkflow(!showWorkflow)}
+              handleReset={handleReset}
+            />
+
+            {/* Collapsible Workflow Chart Area */}
+            {showWorkflow && (
+              <div className="h-60 w-full border-b border-border/40 bg-card/5 relative shrink-0 overflow-hidden">
+                <WorkflowCanvas />
+              </div>
+            )}
 
             {/* Chat area */}
             <div className="flex flex-1 flex-col overflow-hidden px-6 py-4 bg-background/20">
@@ -160,7 +185,19 @@ function CommandCenter() {
   )
 }
 
-function IncidentHeader({ theme, toggleTheme }: { theme: 'light' | 'dark'; toggleTheme: () => void }) {
+function IncidentHeader({
+  theme,
+  toggleTheme,
+  showWorkflow,
+  toggleWorkflow,
+  handleReset,
+}: {
+  theme: 'light' | 'dark'
+  toggleTheme: () => void
+  showWorkflow: boolean
+  toggleWorkflow: () => void
+  handleReset: () => void
+}) {
   const { activeIncident, workflowState } = useIncidentContext()
 
   const isWorking = Object.values(workflowState).some(s => s === 'running')
@@ -201,6 +238,26 @@ function IncidentHeader({ theme, toggleTheme }: { theme: 'light' | 'dark'; toggl
             </span>
           )}
         </div>
+        <button
+          onClick={handleReset}
+          className="p-1.5 rounded-lg border border-border/40 bg-card/30 hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-all hover:scale-105 active:scale-95 cursor-pointer"
+          aria-label="Reset Chat"
+          title="Reset Chat and State"
+        >
+          <RotateCcw className="h-4.5 w-4.5" />
+        </button>
+        <button
+          onClick={toggleWorkflow}
+          className={`p-1.5 rounded-lg border border-border/40 transition-all hover:scale-105 active:scale-95 cursor-pointer ${
+            showWorkflow
+              ? 'bg-primary/15 border-primary/40 text-primary'
+              : 'bg-card/30 hover:bg-muted text-muted-foreground hover:text-foreground'
+          }`}
+          aria-label="Toggle Workflow Chart"
+          title="Toggle Visual Workflow Graph"
+        >
+          <Network className="h-4.5 w-4.5" />
+        </button>
         <button
           onClick={toggleTheme}
           className="p-1.5 rounded-lg border border-border/40 bg-card/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all hover:scale-105 active:scale-95 cursor-pointer"

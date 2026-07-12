@@ -144,14 +144,14 @@ Return ONLY valid JSON, no markdown, no explanation.`,
                 try {
                     const parsed = JSON.parse(result.text);
                     incidentStore.update(incidentId, {
-                        status: "DIAGNOSED",
+                        status: "DIAGNOSING",
                         retryCount: 3,
                     });
                     console.log(`[incident] ${incidentId} diagnosis: ${JSON.stringify(parsed)}`);
                 } catch {
                     // Even if JSON parse fails, we got a text response — still better than FAILED
                     incidentStore.update(incidentId, {
-                        status: "DIAGNOSED",
+                        status: "DIAGNOSING",
                         retryCount: 3,
                     });
                     console.log(`[incident] ${incidentId} raw diagnosis: ${result.text}`);

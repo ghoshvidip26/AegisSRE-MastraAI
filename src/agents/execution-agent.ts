@@ -19,8 +19,9 @@ Return a structured JSON response with:
 - steps: array of { command, status, output }
 - overallStatus: "success" | "partial_failure" | "failed"
 - summary: brief human-readable summary`,
-    model: "google/gemini-2.5-flash",
+    model: process.env.OPENAI_API_KEY ? "openai/gpt-4o-mini" : "google/gemini-2.5-flash",
     tools: {
-        logTool, metricsTool
+        "log-tool": logTool,
+        "metrics-tool": metricsTool,
     }
 })

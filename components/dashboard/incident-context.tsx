@@ -78,54 +78,91 @@ export function IncidentContextProvider({
 
       for (const part of message.parts) {
         // Check for tool parts with output
-        if (typeof part === 'object' && 'type' in part) {
-          const partType = part.type as string
+        if (typeof part === 'object' && part !== null && 'type' in part) {
+          const partObj = part as Record<string, any>
+          const type = (partObj.type as string) || ''
+          
+          // Determine the tool name if this is a tool execution part
+          let toolName = ''
+          if (type === 'tool-invocation' && partObj.toolInvocation) {
+            toolName = partObj.toolInvocation.toolName || ''
+          } else if (type === 'tool-call' || type === 'tool-result') {
+            toolName = partObj.toolName || ''
+          } else if (type.startsWith('tool-')) {
+            const suffix = type.split('-').slice(1).join('-')
+            toolName = suffix === 'call' || suffix === 'result' ? (partObj.toolName || '') : suffix
+          }
 
-          // Extract metrics from metrics-tool calls
-          if (partType === 'tool-metrics-tool' || partType === 'dynamic-tool') {
-            const toolPart = part as { type: string; toolName?: string; output?: unknown; state?: string }
-            const isMetricsTool = partType === 'tool-metrics-tool' || toolPart.toolName === 'metrics-tool'
+          // If we found a tool name, parse its output/result
+          if (toolName) {
+            const toolInvocation = partObj.toolInvocation || {}
+            const output = partObj.output || partObj.result || toolInvocation.result || toolInvocation.output
 
-            if (isMetricsTool && toolPart.state === 'output-available' && toolPart.output) {
-              const output = toolPart.output as Record<string, unknown>
-              metrics = {
-                cpu: (output.cpu as number) ?? 0,
-                memory: (output.memory as number) ?? 0,
-                errorRate: (output.errorRate as number) ?? 0,
-                latency: (output.latency as number) ?? 0,
+            if (toolName === 'metricsTool' || toolName === 'metrics-tool') {
+              if (output) {
+                const metricsObj = output as Record<string, any>
+                metrics = {
+                  cpu: Number(metricsObj.cpu ?? 0),
+                  memory: Number(metricsObj.memory ?? 0),
+                  errorRate: Number(metricsObj.errorRate ?? metricsObj.error_rate ?? 0),
+                  latency: Number(metricsObj.latency ?? 0),
+                }
+                if (workflowState.diagnose === 'pending') {
+                  workflowState.diagnose = 'running'
+                }
               }
-              // Once metrics are fetched, diagnosis is at least running
+            }
+
+            if (toolName === 'logTool' || toolName === 'log-tool') {
+              if (output && typeof output === 'object') {
+                const logsObj = output as { logs?: string }
+                if (logsObj.logs) {
+                  const parsedLogs = parseLogString(logsObj.logs)
+                  logs.push(...parsedLogs)
+                }
+              }
               if (workflowState.diagnose === 'pending') {
                 workflowState.diagnose = 'running'
               }
             }
-          }
 
-          // Extract logs from log-tool calls
-          if (partType === 'tool-log-tool' || partType === 'dynamic-tool') {
-            const toolPart = part as { type: string; toolName?: string; output?: unknown; state?: string }
-            const isLogTool = partType === 'tool-log-tool' || toolPart.toolName === 'log-tool'
-
-            if (isLogTool && toolPart.state === 'output-available' && toolPart.output) {
-              const output = toolPart.output as { logs?: string }
-              if (output.logs) {
-                const parsedLogs = parseLogString(output.logs)
-                logs.push(...parsedLogs)
-              }
-              if (workflowState.diagnose === 'pending') {
-                workflowState.diagnose = 'running'
-              }
-            }
-          }
-
-          // Extract enkrypt policy validation results
-          if (partType === 'tool-enkrypt-policy-validator' || partType === 'dynamic-tool') {
-            const toolPart = part as { type: string; toolName?: string; output?: unknown; state?: string }
-            const isPolicyTool = partType === 'tool-enkrypt-policy-validator' || toolPart.toolName === 'enkrypt-policy-validator'
-
-            if (isPolicyTool && toolPart.state === 'output-available') {
+            if (
+              toolName === 'enkryptPolicyTool' ||
+              toolName === 'enkrypt-policy-validator' ||
+              toolName === 'enkrypt-policy-tool'
+            ) {
               workflowState.plan = 'completed'
               workflowState.execute = 'running'
+            }
+
+            if (toolName === 'delegateDiagnosisTool' || toolName === 'delegate-diagnosis') {
+              if (workflowState.diagnose === 'pending') {
+                workflowState.diagnose = 'running'
+              }
+              if (output) {
+                workflowState.diagnose = 'completed'
+                workflowState.plan = 'running'
+              }
+            }
+
+            if (toolName === 'delegatePlanningTool' || toolName === 'delegate-planning') {
+              if (workflowState.plan === 'pending' || workflowState.plan === 'running') {
+                workflowState.plan = 'running'
+              }
+              if (output) {
+                workflowState.plan = 'completed'
+                workflowState.execute = 'running'
+              }
+            }
+
+            if (toolName === 'delegateVerificationTool' || toolName === 'delegate-verification') {
+              workflowState.execute = 'completed'
+              if (workflowState.verify === 'pending') {
+                workflowState.verify = 'running'
+              }
+              if (output) {
+                workflowState.verify = 'completed'
+              }
             }
           }
         }
@@ -136,6 +173,28 @@ export function IncidentContextProvider({
         for (const part of message.parts) {
           if (typeof part === 'object' && 'type' in part && part.type === 'text') {
             const text = (part as { text: string }).text.toLowerCase()
+
+            // Try to extract metrics if outputted as a JSON block in the text response
+            try {
+              const rawText = (part as { text: string }).text
+              const jsonMatch = rawText.match(/\{[\s\S]*?\}/)
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0])
+                if (parsed && typeof parsed === 'object' && 'cpu' in parsed) {
+                  metrics = {
+                    cpu: Number(parsed.cpu ?? 0),
+                    memory: Number(parsed.memory ?? 0),
+                    errorRate: Number(parsed.errorRate ?? parsed.error_rate ?? 0),
+                    latency: Number(parsed.latency ?? 0),
+                  }
+                  if (workflowState.diagnose === 'pending') {
+                    workflowState.diagnose = 'running'
+                  }
+                }
+              }
+            } catch (e) {
+              // Ignore JSON parse error
+            }
 
             // Infer diagnosis completion
             if (text.includes('root cause') || text.includes('rootcause') || text.includes('diagnosis')) {

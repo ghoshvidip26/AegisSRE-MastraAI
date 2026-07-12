@@ -17,8 +17,9 @@ Return a structured JSON response with:
 - metrics: { cpu, memory, errorRate, latency } (current values)
 - evidence: array of observations supporting your conclusion
 - recommendation: "close_incident" | "escalate" | "rollback"`,
-    model: "google/gemini-2.5-flash",
+    model: process.env.OPENAI_API_KEY ? "openai/gpt-4o-mini" : "google/gemini-2.5-flash",
     tools: {
-        logTool, metricsTool
+        "log-tool": logTool,
+        "metrics-tool": metricsTool,
     }
 })

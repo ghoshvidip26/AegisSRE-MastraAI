@@ -44,3 +44,26 @@ export async function GET() {
 
     return NextResponse.json(uiMessages)
 }
+
+export async function DELETE() {
+    const memory = await mastra.getAgentById('coordinator-agent').getMemory()
+    try {
+        if (memory) {
+            const response = await memory.recall({
+                threadId: THREAD_ID,
+                resourceId: RESOURCE_ID,
+            })
+            const messageIds = (response?.messages || []).map((msg: any) => msg.id)
+            if (messageIds.length > 0) {
+                await memory.deleteMessages(messageIds)
+            }
+        }
+    } catch (e) {
+        console.error('Failed to clear Mastra memory:', e)
+    }
+
+    const { incidentStore } = await import('@/lib/incidents/incident-store')
+    incidentStore.clear()
+
+    return NextResponse.json({ success: true })
+}

@@ -30,6 +30,11 @@ class IncidentStore{
 
     return incident;
   }
+
+  clear() {
+    this.incidents = [];
+    console.log("IncidentStore cleared");
+  }
 }
 declare global {
   // eslint-disable-next-line no-var
